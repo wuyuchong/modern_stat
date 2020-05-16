@@ -1,0 +1,87 @@
+---
+title: "现代统计软件论文"
+author:
+  - 吴宇翀
+  - 高思琴
+  - 陈蔚
+documentclass: ctexart
+output:
+  rticles::ctex:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+classoption: "hyperref,"
+---
+
+
+```{r}
+library(caret)
+```
+
+# An example
+
+```{r}
+library(mlbench)
+data(Sonar)
+set.seed(998)
+inTraining <- createDataPartition(Sonar$Class, p = .75, list = FALSE)
+training <- Sonar[ inTraining,]
+testing  <- Sonar[-inTraining,]
+
+fitControl <- trainControl(## 10-fold CV
+                           method = "repeatedcv",
+                           number = 10,
+                           ## repeated ten times
+                           repeats = 10)
+
+set.seed(825)
+gbmFit1 <- train(Class ~ ., data = training, 
+                 method = "gbm", 
+                 trControl = fitControl,
+                 ## This last option is actually one
+                 ## for gbm() that passes through
+                 verbose = FALSE)
+gbmFit1
+gbmFit1$results
+trellis.par.set(caretTheme())
+plot(gbmFit1, metric = "Kappa")
+
+trellis.par.set(caretTheme())
+densityplot(gbmFit1, pch = "|", xlab = "a")
+```
+
+
+
+
+
+
+```{r}
+install.packages("eurostat")
+library(eurostat)
+query = search_eurostat(pattern = "employment", type = "table", fixed = FALSE)
+```
+
+
+
+```{r}
+library(caret)
+data(GermanCredit)
+str(GermanCredit)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
