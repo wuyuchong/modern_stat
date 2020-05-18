@@ -13,75 +13,132 @@ output:
 classoption: "hyperref,"
 ---
 
-
 ```{r}
 library(caret)
+library(kernlab)
 ```
 
-# An example
+# 摘要
+
+
+
+# 背景
+
+> 待完善
+
+# 数据集说明
 
 ```{r}
-library(mlbench)
-data(Sonar)
-set.seed(998)
-inTraining <- createDataPartition(Sonar$Class, p = .75, list = FALSE)
-training <- Sonar[ inTraining,]
-testing  <- Sonar[-inTraining,]
+dat = read.csv("data.csv")
+dat = dat[,-1]
+dat$SeriousDlqin2yrs = as.factor(dat$SeriousDlqin2yrs)
+```
+
+Data from Dr. Hans Hofmann of the University of Hamburg and stored at the UC Irvine Machine Learning Repository. ^[http://archive.ics.uci.edu/ml/datasets/Statlog+%28German+Credit+Data%29]
+
+These data have two classes for the credit worthiness: good or bad. There are predictors related to attributes, such as: checking account status, duration, credit history, purpose of the loan, amount of the loan, savings accounts or bonds, employment duration, Installment rate in percentage of disposable income, personal information, other debtors/guarantors, residence duration, property, age, other installment plans, housing, number of existing credits, job information, Number of people being liable to provide maintenance for, telephone, and foreign worker status.
+
+Many of these predictors are discrete and have been expanded into several 0/1 indicator variables
+
+
+
+SeriousDlqin2yrs: 是否逾期。
+RevolvingUtilizationOfUnsecuredLines：信用卡和个人信贷额度的总余额（百分比）*怀疑此翻译有误*
+age：年龄
+NumberOfTime30-59DaysPastDueNotWorse：过去2年，借款人逾期30-59天的次数
+DebtRatio：负债比率（百分比）
+MonthlyIncome：月收入
+NumberOfOpenCreditLinesAndLoans：未偿还贷款数量（汽车贷款或抵押贷款等分期付款）和信贷额度（如信用卡）。
+NumberOfTimes90DaysLate：借款人逾期90天或以上的次数。
+NumberRealEstateLoansOrLines：抵押贷款和房地产贷款的数量。
+NumberOfTime60-89DaysPastDueNotWorse：过去2年，借款人逾期60-89天的次数
+NumberOfDependents：家庭中的家属人数（配偶，子女等）
+
+> 数据集表格 dictionary
+
+
+到英文网站上翻译 ^[数据来源: https://www.kaggle.com/c/GiveMeSomeCredit/overview]
+
+> 待完善
+
+## 异常值处理
+
+1. 由于样本量已经足够大，我们删除所有包含缺失值的观测。
+2. 由于**信用卡和个人信贷额度的总余额**和**负债比率**两个指标为百分比，我们将这两个指标中小于0的数据调整为0，将大于1的数据调整为1。
+
+```{r}
+dat$RevolvingUtilizationOfUnsecuredLines[which(dat$RevolvingUtilizationOfUnsecuredLines < 0)] = 0
+dat$RevolvingUtilizationOfUnsecuredLines[which(dat$RevolvingUtilizationOfUnsecuredLines > 1)] = 1
+dat$DebtRatio[which(dat$DebtRatio < 0)] = 0
+dat$DebtRatio[which(dat$DebtRatio > 1)] = 1
+dat_complete = dat[complete.cases(dat),]
+```
+
+## 基准正确率
+
+```{r}
+summary(dat_complete$SeriousDlqin2yrs)
+1 - 8357 / 139974
+```
+
+# 训练
+
+## gbm
+
+```{r}
+set.seed(1)
+inTraining <- createDataPartition(dat_complete$SeriousDlqin2yrs, p = .75, list = FALSE)
+training <- dat_complete[ inTraining,]
+testing  <- dat_complete[-inTraining,]
 
 fitControl <- trainControl(## 10-fold CV
                            method = "repeatedcv",
                            number = 10,
                            ## repeated ten times
-                           repeats = 10)
+                           repeats = 2)
 
-set.seed(825)
-gbmFit1 <- train(Class ~ ., data = training, 
+set.seed(1)
+gbmFit1 <- train(SeriousDlqin2yrs ~ ., data = dat_complete[1:1000,], 
                  method = "gbm", 
                  trControl = fitControl,
-                 ## This last option is actually one
-                 ## for gbm() that passes through
-                 verbose = FALSE)
+                 tuneLength = 10,
+                 preProc = c("center", "scale"))
 gbmFit1
 gbmFit1$results
+
+trellis.par.set(caretTheme())
+plot(gbmFit1)
+
 trellis.par.set(caretTheme())
 plot(gbmFit1, metric = "Kappa")
 
 trellis.par.set(caretTheme())
-densityplot(gbmFit1, pch = "|", xlab = "a")
+densityplot(gbmFit1, pch = "|")
 ```
 
+## 模型间的比较
 
-
-
-
+我们对 ... 和 ... 模型进行比较，两个模型都使用相同的重抽样方法估计各自的模型表现。 ^[由于设置的随机数种子相同，故不同模型使用的重抽样样本完全一致。]
 
 ```{r}
-install.packages("eurostat")
-library(eurostat)
-query = search_eurostat(pattern = "employment", type = "table", fixed = FALSE)
+set.seed()
 ```
 
 
+
+# logit regression
 
 ```{r}
-library(caret)
-data(GermanCredit)
-str(GermanCredit)
+logit = glm(SeriousDlqin2yrs ~ ., data = dat_complete, family = binomial)
+summary(logit)
 ```
 
 
 
+# 附录
 
+## 数据
 
-
-
-
-
-
-
-
-
-
-
-
-
+```{r}
+str(dat)
+```
