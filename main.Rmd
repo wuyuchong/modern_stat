@@ -16,6 +16,7 @@ classoption: "hyperref,"
 ```{r}
 library(caret)
 library(kernlab)
+library(pROC)
 ```
 
 # 摘要
@@ -90,6 +91,14 @@ inTraining <- createDataPartition(dat_complete$SeriousDlqin2yrs, p = .01, list =
 training <- dat_complete[inTraining,]
 ```
 
+
+Kappa 统计量（Cohen 1960）最初是一个用来评估两个估价者评估结果的一致性，同时也考虑到了由偶然情况引起的准确性误差。
+
+$$\mathrm{Kappa}=\frac{O-E}{1-E}$$
+
+> 在上式中，O是观测的准确性，E是基于混淆矩阵边缘计数得到的期望准确性。该统计量取值在-1和1之间;0值表示观测类与预测类之间没有一致性，1值表示模型的预测与观测类完全一致。负值表示预测与事实相反，但在建立预测模型过程中绝对值大的负值很少出现⊙。当各类分布相同时，总精确度与 Kappa是成比例的。取决于具体情况，Kappa值在0.30到0.50之间代表合理的一致性。假定一个模型的准确度很高(90%)，但期望的准确度也很高(85%)， Kappa统计量表明观测类与预测类之间适度一致( Kappa=1/3)。Kappa统计量也可以扩展至评估类别大于2情形下的一致性。当类有自然顺序(例如“低”、“中”、“高”)时，我们可以使用该统计量的另外一种形式，称为加权 Kappa，它给予偏离真实结果更远的误差更高的实质性惩罚。例如，将“低”样本误判为“高”导致Kappa统计量的降幅大于将“低”样本误判为“中”的情况。（Agresti 2002）
+
+> 这段话要进行语序修改，规避查重。
 
 ## GBM
 
@@ -184,12 +193,72 @@ ggplot(resamp,
 
 # 全部样本 logit regression
 
+因为 logit 模型相对简单，求解速度快，且具有较强的可解释性，故我们使用 logit 模型对全部完整的样本进行拟合。
+
 ```{r}
-logit = glm(SeriousDlqin2yrs ~ ., data = dat_complete, family = binomial)
-summary(logit)
+set.seed(1)
+inTraining <- createDataPartition(dat_complete$SeriousDlqin2yrs, p = .75, list = FALSE)
+train <- dat_complete[inTraining,]
+test <- dat_complete[-inTraining,]
+```
+
+```{r}
+logit2 = glm(SeriousDlqin2yrs ~ ., data = train, family = binomial(link = "logit"))
+summary(logit2)
 ```
 
 分析逻辑回归的方向、变量显著性。
+
+## 预测
+
+```{r}
+probability = predict(logit2, test, type = "response")
+summary(probability)
+
+distribution = as.data.frame(probability)
+distribution = cbind(distribution, group = test$SeriousDlqin2yrs)
+ggplot(distribution, aes(x = probability, fill = group)) +
+  geom_density(alpha = 0.3) + 
+  theme_minimal() +
+  scale_fill_manual(values = c("#037418", "darkred"))
+
+testPred = probability
+length(testPred[testPred > 0.5]) / length(testPred)
+testPred[testPred > 0.5] = 1
+testPred[testPred <= 0.5] = 0
+testPred = as.factor(testPred)
+```
+
+可以看出，对于真实情况为信用好的持卡人，我们预测出的逾期概率值的分布是有偏的，大多数预测概率的非常低。然而，比较之下，对于真实情况为逾期的持卡人，我们预测出的逾期概率值的分布则显得较为均匀。
+
+这说明：**我们的模型将信用好的持卡人错认为逾期的概率较低，但是较难识别出逾期的客户。**
+
+## 混淆矩阵
+
+灵敏度（Sensitivity）和特异度（Specificity）
+
+```{r}
+confusionMatrix(data = test$SeriousDlqin2yrs,
+                reference = testPred,
+                positive = "1")
+```
+
+## ROC
+
+```{r}
+rocCurve = roc(response = test$SeriousDlqin2yrs,
+               predictor = probability,
+               levels = rev(levels(test$SeriousDlqin2yrs)))
+auc(rocCurve)
+plot(rocCurve, legacy.axes = TRUE)
+```
+
+## 提升图
+
+```{r}
+labs = 
+```
+
 
 # 附录
 
