@@ -20,9 +20,13 @@ library(kernlab)
 
 # 摘要
 
+识别与预测信用卡是否将会逾期（信用卡风控部门）
 
+> 待完善
 
 # 背景
+
+识别与预测信用卡是否将会逾期（信用卡风控部门）
 
 > 待完善
 
@@ -33,14 +37,6 @@ dat = read.csv("data.csv")
 dat = dat[,-1]
 dat$SeriousDlqin2yrs = as.factor(dat$SeriousDlqin2yrs)
 ```
-
-Data from Dr. Hans Hofmann of the University of Hamburg and stored at the UC Irvine Machine Learning Repository. ^[http://archive.ics.uci.edu/ml/datasets/Statlog+%28German+Credit+Data%29]
-
-These data have two classes for the credit worthiness: good or bad. There are predictors related to attributes, such as: checking account status, duration, credit history, purpose of the loan, amount of the loan, savings accounts or bonds, employment duration, Installment rate in percentage of disposable income, personal information, other debtors/guarantors, residence duration, property, age, other installment plans, housing, number of existing credits, job information, Number of people being liable to provide maintenance for, telephone, and foreign worker status.
-
-Many of these predictors are discrete and have been expanded into several 0/1 indicator variables
-
-
 
 SeriousDlqin2yrs: 是否逾期。
 RevolvingUtilizationOfUnsecuredLines：信用卡和个人信贷额度的总余额（百分比）*怀疑此翻译有误*
@@ -81,39 +77,88 @@ summary(dat_complete$SeriousDlqin2yrs)
 1 - 8357 / 139974
 ```
 
-# 训练
+# 部分样本训练
 
-## gbm
+## 抽样
+
+由于数据集样本量过大，难以完成较为复杂的模型求解。 ^[由于条件所限，本研究小组只有单台计算机的算力。在有分布式计算的环境下，可能不需要此步操作。]
+
 
 ```{r}
 set.seed(1)
-inTraining <- createDataPartition(dat_complete$SeriousDlqin2yrs, p = .75, list = FALSE)
-training <- dat_complete[ inTraining,]
-testing  <- dat_complete[-inTraining,]
+inTraining <- createDataPartition(dat_complete$SeriousDlqin2yrs, p = .01, list = FALSE)
+training <- dat_complete[inTraining,]
+```
 
+
+## GBM
+
+```{r include=FALSE}
+set.seed(1)
 fitControl <- trainControl(## 10-fold CV
                            method = "repeatedcv",
                            number = 10,
                            ## repeated ten times
-                           repeats = 2)
+                           repeats = 5)
 
 set.seed(1)
-gbmFit1 <- train(SeriousDlqin2yrs ~ ., data = dat_complete[1:1000,], 
+gbm <- train(SeriousDlqin2yrs ~ ., data = training, 
                  method = "gbm", 
-                 trControl = fitControl,
-                 tuneLength = 10,
-                 preProc = c("center", "scale"))
-gbmFit1
-gbmFit1$results
+                 trControl = fitControl)
+```
+
+## SVM
+
+```{r}
+set.seed(1)
+fitControl <- trainControl(## 10-fold CV
+                           method = "repeatedcv",
+                           number = 10,
+                           ## repeated ten times
+                           repeats = 5)
+
+set.seed(1)
+svm <- train(SeriousDlqin2yrs ~ ., data = training, 
+                 method = "svmRadial", 
+                 trControl = fitControl)
+svm
+svm$results
 
 trellis.par.set(caretTheme())
-plot(gbmFit1)
+plot(svm)
 
 trellis.par.set(caretTheme())
-plot(gbmFit1, metric = "Kappa")
+plot(svm, metric = "Kappa")
 
 trellis.par.set(caretTheme())
-densityplot(gbmFit1, pch = "|")
+densityplot(svm, pch = "|")
+```
+
+## Logit
+
+```{r}
+set.seed(1)
+fitControl <- trainControl(## 10-fold CV
+                           method = "repeatedcv",
+                           number = 10,
+                           ## repeated ten times
+                           repeats = 5)
+
+set.seed(1)
+logit <- train(SeriousDlqin2yrs ~ ., data = training, 
+                 method = "glm", 
+                 trControl = fitControl)
+logit
+logit$results
+
+trellis.par.set(caretTheme())
+plot(logit)
+
+trellis.par.set(caretTheme())
+plot(logit, metric = "Kappa")
+
+trellis.par.set(caretTheme())
+densityplot(logit, pch = "|")
 ```
 
 ## 模型间的比较
@@ -121,19 +166,30 @@ densityplot(gbmFit1, pch = "|")
 我们对 ... 和 ... 模型进行比较，两个模型都使用相同的重抽样方法估计各自的模型表现。 ^[由于设置的随机数种子相同，故不同模型使用的重抽样样本完全一致。]
 
 ```{r}
-set.seed()
+resamp = resamples(list(GBM = gbm, SVM = svm, Logit = logit))
+summary(resamp)
+summary(diff(resamp))
+ggplot(resamp,
+       models = c("GBM", "SVM", "Logit"),
+       metric = "Accuracy",
+       conf.level = 0.95) +
+  theme_bw()
 ```
 
+分析图，在 95% 的置信区间下，.....
 
+分析p值
 
-# logit regression
+.....结果表明，X个模型表现十分接近。
+
+# 全部样本 logit regression
 
 ```{r}
 logit = glm(SeriousDlqin2yrs ~ ., data = dat_complete, family = binomial)
 summary(logit)
 ```
 
-
+分析逻辑回归的方向、变量显著性。
 
 # 附录
 
