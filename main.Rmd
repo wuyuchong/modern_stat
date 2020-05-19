@@ -100,15 +100,17 @@ $$\mathrm{Kappa}=\frac{O-E}{1-E}$$
 
 > 这段话要进行语序修改，规避查重。
 
+我们使用 Kappa 和准确率作为模型的评价指标。
+
 ## GBM
 
 ```{r include=FALSE}
-set.seed(1)
 fitControl <- trainControl(## 10-fold CV
                            method = "repeatedcv",
                            number = 10,
                            ## repeated ten times
-                           repeats = 5)
+                           repeats = 5,
+                           summaryFunction = twoClassSummary)
 
 set.seed(1)
 gbm <- train(SeriousDlqin2yrs ~ ., data = training, 
@@ -120,16 +122,10 @@ gbm <- train(SeriousDlqin2yrs ~ ., data = training,
 
 ```{r}
 set.seed(1)
-fitControl <- trainControl(## 10-fold CV
-                           method = "repeatedcv",
-                           number = 10,
-                           ## repeated ten times
-                           repeats = 5)
-
-set.seed(1)
 svm <- train(SeriousDlqin2yrs ~ ., data = training, 
                  method = "svmRadial", 
-                 trControl = fitControl)
+                 trControl = fitControl,
+            tuneLength = 10)
 svm
 svm$results
 
@@ -147,13 +143,6 @@ densityplot(svm, pch = "|")
 
 ```{r}
 set.seed(1)
-fitControl <- trainControl(## 10-fold CV
-                           method = "repeatedcv",
-                           number = 10,
-                           ## repeated ten times
-                           repeats = 5)
-
-set.seed(1)
 logit <- train(SeriousDlqin2yrs ~ ., data = training, 
                  method = "glm", 
                  trControl = fitControl)
@@ -169,6 +158,86 @@ plot(logit, metric = "Kappa")
 trellis.par.set(caretTheme())
 densityplot(logit, pch = "|")
 ```
+
+Logit 是一个受到非常广泛应用的模型，它十分简单、计算速度非常快，而且具有很强的可解释性。虽然 Logit 模型已经由很好的预测分类能力，但如果我们仅仅关注这一预测准确性这一指标，可能还有其它模型有更佳的表现。
+
+## 线性判别分析（LDA）
+
+Fisher（1936）和 Welch（1939）分析了获得最优判别准则的方式。
+
+由贝叶斯法则：
+
+$$
+\operatorname{Pr}\left[Y=C_{\ell} | X\right]=\frac{\operatorname{Pr}\left[Y=C_{\ell}\right] \operatorname{Pr}\left[X | Y=C_{\ell}\right]}{\sum_{\ell=1}^{C} \operatorname{Pr}\left[Y=C_{\ell}\right] \operatorname{Pr}\left[X | Y=C_{\ell}\right]}
+$$
+
+对于二分类问题，如果：
+
+$$
+\operatorname{Pr}\left[Y=C_{1}\right] \operatorname{Pr}\left[X | Y=C_{1}\right]>\operatorname{Pr}\left[Y=C_{2}\right] \operatorname{Pr}\left[X | Y=C_{2}\right]
+$$
+
+我们就将 X 分入类别1，否则分入类别2。
+
+为了计算 $\operatorname{Pr}\left[X | Y=C_{\ell}\right]$，我们假设预测变量服从多元正态分布，分布的两个参数为：多维均值向量 $\boldsymbol{\mu}_{\ell}$ 和协方差矩阵 $\boldsymbol{\Sigma}_{\ell}$，假设不同组的均值向量不同且协方差相同，用每一类观测样本均值 $\bar{x}_{\ell}$ 估计 $\boldsymbol{\mu}_{\ell}$，用样本协方差 $\boldsymbol{S}$ 估计理论协方差矩阵 $\boldsymbol{\Sigma}$，将样本观测 $\mu$ 代入 $X$，第 $\ell$ 组的线性判别函数为：
+
+$$
+X^{\prime} \boldsymbol{\Sigma}^{-1} \boldsymbol{\mu}_{\ell}-0.5 \boldsymbol{\mu}_{\ell}^{\prime} \boldsymbol{\Sigma}^{-1} \boldsymbol{\mu}_{\ell}+\log \left(\operatorname{Pr}\left[Y=C_{\ell}\right]\right)
+$$
+
+当我们仔细观察线性判别函数时,我们会发现 Fisher 的线性判别方法有两点缺陷：
+
+1. 而且，由于线性判别分析的数学构造，随着预测变量数目的增加，预测的类别概率越来越接近0和1。这意味这，在我们的数据集下，由于变量较多，如前文所述的调整概率阈值的方法可能有效性会降低。这在单纯分类**逾期**和**信用良好**的持卡人时可能并不是问题，但在需要进一步平衡灵敏度和特异度以达到更好效果时将很难进行。
+
+2. 由于线性判别分析的结果取决于协方差矩阵的逆，且只有当这个矩阵可逆时才存在唯一解。这意味着样本量要大于变量个数 ^[一般要求数据集含有至少预测变量5——10倍的样本]，且变量必须尽量相互独立。而在我们的数据集中，变量之间有很强的多重共线性，这在一定程度上会降低预测的准确性。
+
+```{r}
+set.seed(1)
+logit <- train(SeriousDlqin2yrs ~ ., data = training, 
+                 method = "lda", 
+                 trControl = fitControl,
+               preProc = c("center", "scale"),)
+logit
+logit$results
+
+trellis.par.set(caretTheme())
+plot(logit)
+
+trellis.par.set(caretTheme())
+plot(logit, metric = "Kappa")
+
+trellis.par.set(caretTheme())
+densityplot(logit, pch = "|")
+```
+
+## 偏最小二乘判别分析（PLSDA）
+
+由于 LDA 不太适合多重共线性的变量，我们可以试着使用主成分分析压缩变量空间的维度，但 PCA 可能无法识别能将样本分类的较好变量组合，且由于没有涉及被解释变量的分类信息（无监督），很难通过 PCA 找到一个最优化的分类预测。
+
+所以，我们使用偏最小二乘判别分析来进行分类。Berntsson 和 Wold（1986）将偏最小二乘应用在了问题中，起名为偏最小二乘判别分析（PLSDA）。尽管 Lie 和 Rayens（2007）指出，在降维非必须且建模目的时分类的时候，LDA 一定优于 PLS，但我们希望在降维之后，PLS 的表现能超过 LDA。
+
+```{r}
+set.seed(1)
+logit <- train(SeriousDlqin2yrs ~ ., data = training, 
+                 method = "pls", 
+                 trControl = fitControl)
+logit
+logit$results
+
+trellis.par.set(caretTheme())
+plot(logit)
+
+trellis.par.set(caretTheme())
+plot(logit, metric = "Kappa")
+
+trellis.par.set(caretTheme())
+densityplot(logit, pch = "|")
+```
+
+缺点：
+
+1. 
+
 
 ## 模型间的比较
 
@@ -273,29 +342,33 @@ confusion
 ROC曲线 (Altman和 Bland1994; Brown和 Davis2006; Fawcett2006).... ^[ROC曲线是一个较为常用的方法，它给出了一系列连续数据点，便于确定一个有效的阈值，将超过某个阈值的值表示一个特定的事件。]
 
 
-
-
-
-
-
-
-> 这段话要进行语序修改，规避查重。
-
 ```{r}
 rocCurve = roc(response = test$SeriousDlqin2yrs,
                predictor = probability,
-               levels = rev(levels(test$SeriousDlqin2yrs)))
+               levels = rev(levels(test$SeriousDlqin2yrs)),
+               plot = TRUE,
+               print.thres=TRUE, print.auc=TRUE)
 auc(rocCurve)
-plot(rocCurve, legacy.axes = TRUE)
 ```
 
+前文计算灵敏度和特异度时，我们默认50%概率阈值。为了捕获更多真阳性样本的方式提高灵敏度，我们可以通过降低阈值的方法。将阈值降低至 XX, 此时，灵敏度从 XX 提高到了 XX，特异度.....。也就是说，降低阈值有利于我们识别出更多逾期的持卡人，但同时也会使误判的几率上升。
 
 
 ## 提升图
 
 ```{r}
-labs = 
+test = cbind(test, probability)
+liftCurve = lift(SeriousDlqin2yrs ~ probability, data = test[1:1000,])
+plot(liftCurve)
 ```
+
+
+在实际操作中，我们可以通过确定不同的阈值来达到不同的效果，例如：
+
+1. 在进行交易风控、信用卡降额的自动化系统构建时，通过确定较高的阈值以提高特异度，避免错判。
+2. 在进行逾期自动化预测以便于进一步调查时，通过降低阈值的方式提高灵敏度，以检测出更多潜在逾期持卡人。
+3. 通过平衡错判的成本与查漏的损失，确定适中的阈值以谋求商业利益最大化。
+
 
 
 # 附录
