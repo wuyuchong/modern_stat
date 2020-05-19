@@ -14,6 +14,7 @@ classoption: "hyperref,"
 ---
 
 ```{r}
+library(ggplot2)
 library(caret)
 library(kernlab)
 library(pROC)
@@ -54,9 +55,8 @@ NumberOfDependents：家庭中的家属人数（配偶，子女等）
 > 数据集表格 dictionary
 
 
-到英文网站上翻译 ^[数据来源: https://www.kaggle.com/c/GiveMeSomeCredit/overview]
 
-> 待完善
+> 待完善：数据集的背景什么的可以到英文网站上翻译 ^[数据来源: https://www.kaggle.com/c/GiveMeSomeCredit/overview]
 
 ## 异常值处理
 
@@ -78,6 +78,18 @@ summary(dat_complete$SeriousDlqin2yrs)
 1 - 8357 / 139974
 ```
 
+# 描述分析
+
+```{r}
+ggplot(dat, aes(x = age, fill = SeriousDlqin2yrs)) +
+  geom_density(alpha = 0.3) + 
+  theme_minimal() +
+  scale_fill_manual(values = c("#037418", "darkred"))
+```
+
+
+> 待完善 对数据集的描述分析
+
 # 模型选择
 
 ## 抽样
@@ -89,6 +101,12 @@ summary(dat_complete$SeriousDlqin2yrs)
 set.seed(1)
 inTraining <- createDataPartition(dat_complete$SeriousDlqin2yrs, p = .01, list = FALSE)
 training <- dat_complete[inTraining,]
+
+fitControl <- trainControl(## 10-fold CV
+                           method = "repeatedcv",
+                           number = 10,
+                           ## repeated ten times
+                           repeats = 5)
 ```
 
 
@@ -101,43 +119,6 @@ $$\mathrm{Kappa}=\frac{O-E}{1-E}$$
 > 这段话要进行语序修改，规避查重。
 
 我们使用 Kappa 和准确率作为模型的评价指标。
-
-## GBM
-
-```{r include=FALSE}
-fitControl <- trainControl(## 10-fold CV
-                           method = "repeatedcv",
-                           number = 10,
-                           ## repeated ten times
-                           repeats = 5,
-                           summaryFunction = twoClassSummary)
-
-set.seed(1)
-gbm <- train(SeriousDlqin2yrs ~ ., data = training, 
-                 method = "gbm", 
-                 trControl = fitControl)
-```
-
-## SVM
-
-```{r}
-set.seed(1)
-svm <- train(SeriousDlqin2yrs ~ ., data = training, 
-                 method = "svmRadial", 
-                 trControl = fitControl,
-            tuneLength = 10)
-svm
-svm$results
-
-trellis.par.set(caretTheme())
-plot(svm)
-
-trellis.par.set(caretTheme())
-plot(svm, metric = "Kappa")
-
-trellis.par.set(caretTheme())
-densityplot(svm, pch = "|")
-```
 
 ## Logit
 
@@ -185,6 +166,8 @@ $$
 X^{\prime} \boldsymbol{\Sigma}^{-1} \boldsymbol{\mu}_{\ell}-0.5 \boldsymbol{\mu}_{\ell}^{\prime} \boldsymbol{\Sigma}^{-1} \boldsymbol{\mu}_{\ell}+\log \left(\operatorname{Pr}\left[Y=C_{\ell}\right]\right)
 $$
 
+由于我们的分类只有两类，所以只有一个判别向量，不需要优化判别向量的数目，即不需要模型调优，计算速度较快。
+
 当我们仔细观察线性判别函数时,我们会发现 Fisher 的线性判别方法有两点缺陷：
 
 1. 而且，由于线性判别分析的数学构造，随着预测变量数目的增加，预测的类别概率越来越接近0和1。这意味这，在我们的数据集下，由于变量较多，如前文所述的调整概率阈值的方法可能有效性会降低。这在单纯分类**逾期**和**信用良好**的持卡人时可能并不是问题，但在需要进一步平衡灵敏度和特异度以达到更好效果时将很难进行。
@@ -216,28 +199,107 @@ densityplot(logit, pch = "|")
 
 所以，我们使用偏最小二乘判别分析来进行分类。Berntsson 和 Wold（1986）将偏最小二乘应用在了问题中，起名为偏最小二乘判别分析（PLSDA）。尽管 Lie 和 Rayens（2007）指出，在降维非必须且建模目的时分类的时候，LDA 一定优于 PLS，但我们希望在降维之后，PLS 的表现能超过 LDA。
 
+我们只使用前十个 PLS 成分
+
 ```{r}
 set.seed(1)
-logit <- train(SeriousDlqin2yrs ~ ., data = training, 
+plsda <- train(SeriousDlqin2yrs ~ ., data = training, 
                  method = "pls", 
-                 trControl = fitControl)
-logit
-logit$results
+                 trControl = fitControl,
+               tuneGrid = expand.grid(.ncomp = 1:10))
+plsda
+plsda$results
 
 trellis.par.set(caretTheme())
-plot(logit)
+plot(plsda)
 
 trellis.par.set(caretTheme())
-plot(logit, metric = "Kappa")
+plot(plsda, metric = "Kappa")
 
 trellis.par.set(caretTheme())
-densityplot(logit, pch = "|")
+densityplot(plsda, pch = "|")
 ```
 
 缺点：
 
 1. 
 
+变量重要程度：
+
+```{r}
+plsImp = varImp(plsda, scale = FALSE)
+table = data.frame(variables = rownames(plsImp$importance), importence = plsImp$importance$Overall)
+ggplot(table, aes(x = reorder(variables, importence), y = importence)) +
+  geom_col() +
+  theme_minimal() +
+  coord_flip() +
+  labs(x = "variables")
+```
+
+> 待分析
+
+## SVM
+
+Logit、LDA、PLSDA 本质上都是线性模型，即模型结构产生线性类边界，这一类模型的优点是不太会受到无信息变量的干扰。然而，在我们的数据中，并没有存在大量无信息变量的情况，所以我们考虑使用非线性模型进行训练。
+
+```{r}
+set.seed(1)
+svm <- train(SeriousDlqin2yrs ~ ., data = training, 
+                 method = "svmRadial", 
+                 trControl = fitControl,
+            tuneLength = 5)
+svm
+svm$results
+
+trellis.par.set(caretTheme())
+plot(svm)
+
+trellis.par.set(caretTheme())
+plot(svm, metric = "Kappa")
+
+trellis.par.set(caretTheme())
+densityplot(svm, pch = "|")
+```
+
+## 随机梯度助推法（GBM）
+
+第三类被广泛应用的模型是分类树与基于规则的模型，在此，我们使用助推法这种树结构与规则的融合方法。
+
+Friedman等（2000）发现分类问题可以当作是正向分布可加模型，通过最小化指数损失函数实现分类。
+
+首先我们设定样本预测初始值为对数发生：
+
+$$
+f_{i}^{(0)}=\log \frac{\hat{p}}{1-\hat{p}}
+$$
+
+其中，$f(x)$ 是模型的预测值，$\hat{p}_{i}=\frac{1}{1+\exp [-f(x)]}$
+
+接着从 $j = 1$ 开始进行迭代：
+
+1. 计算梯度 $z_{i}=y_{i}-\hat{p}_{i}$
+2. 对训练集随机抽样
+3. 基于子样本，用之前得到的残差作为结果变量训练树模型
+4. 计算终结点 Pearson 残差的估计 $r_{i}=\frac{1 / n\sum_{i}^{n}\left(y_{i}-\hat{p}_{i}\right)}{1 / n \sum_{i}^{n} \hat{p}_{i}\left(1-\hat{p}_{i}\right)}$
+5. 更新当前模型 $f_{1}=f_{i}+\lambda f_{i}^{(j)}$
+
+```{r include=FALSE}
+set.seed(1)
+gbm <- train(SeriousDlqin2yrs ~ ., data = training, 
+                 method = "gbm", 
+                 trControl = fitControl)
+svm
+svm$results
+
+trellis.par.set(caretTheme())
+plot(svm)
+
+trellis.par.set(caretTheme())
+plot(svm, metric = "Kappa")
+
+trellis.par.set(caretTheme())
+densityplot(svm, pch = "|")
+```
 
 ## 模型间的比较
 
