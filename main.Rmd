@@ -6,31 +6,54 @@ author:
   - 陈蔚
 documentclass: ctexart
 output:
+  word_document:
+    toc: yes
   rticles::ctex:
     fig_caption: yes
     number_sections: yes
     toc: yes
+    template: template.tex
 classoption: "hyperref,"
+geometry: margin=1in
+csl: chinese-gb7714-2005-numeric.csl
+bibliography: reference.bib
+header-includes:
+   - \usepackage{graphicx}
+   - \usepackage{float}
+logo: "cufe.jpg"
 ---
 
-```{r}
+```{r setup, include=FALSE, message=FALSE}
+knitr::opts_chunk$set(fig.pos = 'H', echo = FALSE, warning = FALSE, message = FALSE)
 library(ggplot2)
 library(caret)
 library(kernlab)
 library(pROC)
+library(knitr)
+library(magrittr)
+# base_family = 'STXihei'
+# bibliography: cite.bib
 ```
 
 # 摘要
 
-识别与预测信用卡是否将会逾期（信用卡风控部门）
+---
+
+识别与预测信用卡是否将会逾期
 
 > 待完善
+
+---
 
 # 背景
 
+---
+
 识别与预测信用卡是否将会逾期（信用卡风控部门）
 
-> 待完善
+> 陈蔚：待完善，数据集的背景什么的可以到英文网站上翻译 ^[数据来源: https://www.kaggle.com/c/GiveMeSomeCredit/overview]
+
+---
 
 # 数据集说明
 
@@ -40,25 +63,12 @@ dat = dat[,-1]
 dat$SeriousDlqin2yrs = as.factor(dat$SeriousDlqin2yrs)
 ```
 
-SeriousDlqin2yrs: 是否逾期。
-RevolvingUtilizationOfUnsecuredLines：信用卡和个人信贷额度的总余额（百分比）*怀疑此翻译有误*
-age：年龄
-NumberOfTime30-59DaysPastDueNotWorse：过去2年，借款人逾期30-59天的次数
-DebtRatio：负债比率（百分比）
-MonthlyIncome：月收入
-NumberOfOpenCreditLinesAndLoans：未偿还贷款数量（汽车贷款或抵押贷款等分期付款）和信贷额度（如信用卡）。
-NumberOfTimes90DaysLate：借款人逾期90天或以上的次数。
-NumberRealEstateLoansOrLines：抵押贷款和房地产贷款的数量。
-NumberOfTime60-89DaysPastDueNotWorse：过去2年，借款人逾期60-89天的次数
-NumberOfDependents：家庭中的家属人数（配偶，子女等）
+```{r}
+explain = read.csv("dictionary_chinese.csv", header = TRUE)
+kable(explain, caption = "变量描述解释")
+```
 
-> 数据集表格 dictionary
-
-
-
-> 待完善：数据集的背景什么的可以到英文网站上翻译 ^[数据来源: https://www.kaggle.com/c/GiveMeSomeCredit/overview]
-
-## 异常值处理
+# 数据预处理
 
 1. 由于样本量已经足够大，我们删除所有包含缺失值的观测。
 2. 由于**信用卡和个人信贷额度的总余额**和**负债比率**两个指标为百分比，我们将这两个指标中小于0的数据调整为0，将大于1的数据调整为1。
@@ -71,31 +81,201 @@ dat$DebtRatio[which(dat$DebtRatio > 1)] = 1
 dat_complete = dat[complete.cases(dat),]
 ```
 
-## 基准正确率
-
-```{r}
-summary(dat_complete$SeriousDlqin2yrs)
-1 - 8357 / 139974
-```
-
 # 描述分析
 
-```{r}
-ggplot(dat, aes(x = age, fill = SeriousDlqin2yrs)) +
+## 年龄
+
+```{r fig.align="center", fig.cap="信用卡逾期与否两类人群的年龄分布（红色代表逾期）", out.width="80%"}
+ggplot(dat_complete, aes(x = age, fill = SeriousDlqin2yrs)) +
   geom_density(alpha = 0.3) + 
   theme_minimal() +
   scale_fill_manual(values = c("#037418", "darkred"))
 ```
 
+---
 
-> 待完善 对数据集的描述分析
+从上图中我们可以看到，信用卡逾期与否的两类人群年龄上有着较为明显的差别。信用卡逾期者普遍年龄较小，这可能与信用卡使用者.......有关。
+
+> 待完善（陈蔚）
+
+---
+
+## 债务数量
+
+我们在信用好和差的持卡人中各抽取1000人，且由于数量多于5的持卡人非常少，为了方便画图，我们删去这些样本。
+
+```{r fig.align="center", fig.cap="信用卡逾期与否两类人群的债务数量（红色代表逾期）", out.width="80%"}
+dat_process = dat_complete[which(dat_complete$NumberRealEstateLoansOrLines < 5),]
+good = dat_process[which(dat_process$SeriousDlqin2yrs == 0),]
+bad = dat_process[which(dat_process$SeriousDlqin2yrs == 1),]
+dat_process = rbind(good[1:1000,], bad[1:1000,])
+ggplot(dat_process, aes(x = NumberRealEstateLoansOrLines, fill = SeriousDlqin2yrs)) +
+  geom_histogram(stat = "count", alpha = 0.6) + 
+  theme_minimal() +
+  scale_fill_manual(values = c("#037418", "darkred")) +
+  facet_grid(cols = vars(SeriousDlqin2yrs))
+```
+
+---
+
+> 陈蔚：与上面的分析类似
+
+---
+
+## 月收入
+
+且由于月收入高于30000的持卡人非常少，为了方便画图，我们删去这些样本。
+
+```{r fig.align="center", fig.cap="信用卡逾期与否两类人群的月收入（红色代表逾期）", out.width="80%"}
+dat_process = dat_complete[which(dat_complete$MonthlyIncome < 30000),]
+ggplot(dat_process, aes(x = SeriousDlqin2yrs, y = MonthlyIncome, fill = SeriousDlqin2yrs)) +
+  geom_violin(alpha = 0.3) + 
+  theme_minimal() +
+  scale_fill_manual(values = c("#037418", "darkred"))
+```
+
+---
+
+> 陈蔚：与上面的分析类似
+
+---
+
+# Logit 回归
+
+## 拟合
+
+因为 logit 模型相对简单，求解速度快，且具有较强的可解释性，故我们使用 logit 模型对样本进行拟合。
+
+我们对样本进行随机抽样，划分为 75% 的训练集和 25% 的测试集（验证集）。
+
+```{r}
+set.seed(1)
+inTraining <- createDataPartition(dat_complete$SeriousDlqin2yrs, p = .75, list = FALSE)
+train <- dat_complete[inTraining,]
+test <- dat_complete[-inTraining,]
+```
+
+```{r}
+logit2 = glm(SeriousDlqin2yrs ~ ., data = train, family = binomial(link = "logit"))
+logit2_sum = summary(logit2)
+translate = as.character(explain$变量名)
+translate[1] = "（截距）"
+rownames(logit2_sum$coefficients) = translate
+kable(logit2_sum$coefficients, caption = "Logit回归系数表", digit = 2)
+```
+
+---
+
+> 可以看到，所有系数的 p 值在四舍五入后都为0，变量全部显著。
+
+> 陈蔚：结合我们的数据集背景，分析自变量对因变量（是否逾期）的正负向作用。（Estimate 那一列为正，代表该变量的增加会引起逾期的可能性增大）
+
+---
+
+## 预测
+
+```{r fig.align="center", fig.cap="预测的逾期概率值（红色代表已知为逾期）", out.width="80%"}
+probability = predict(logit2, test, type = "response")
+distribution = as.data.frame(probability)
+distribution = cbind(distribution, group = test$SeriousDlqin2yrs)
+ggplot(distribution, aes(x = probability, fill = group)) +
+  geom_density(alpha = 0.3) + 
+  theme_minimal() +
+  scale_fill_manual(values = c("#037418", "darkred"))
+
+testPred = probability
+testPred[testPred > 0.5] = 1
+testPred[testPred <= 0.5] = 0
+testPred = as.factor(testPred)
+```
+
+可以看出，对于真实情况为信用好的持卡人，我们预测出的逾期概率值的分布是有偏的，大多数预测概率的非常低。然而，比较之下，对于真实情况为逾期的持卡人，我们预测出的逾期概率值的分布则显得较为均匀。
+
+为此，我们猜想：**我们的模型将信用好的持卡人错认为逾期的概率较低，但是较难识别出逾期的客户。**
+
+为了验证我们的猜想，我们使用混淆矩阵来计算预测模型的灵敏度和特异度。
+
+## 混淆矩阵与验证结果
+
+灵敏度（Sensitivity）
+
+$$\text{灵敏度} = \frac{\text{正确判定为“逾期”的样本数量}}{\text{观测到的“逾期”的样本数量}}$$
+
+特异度（Specificity）
+
+$$\text{灵敏度} = \frac{\text{正确判定为“正常”的样本数量}}{\text{观测到的“正常”的样本数量}}$$
+
+假阳性率为 1 - 特异度
+
+```{r}
+confusion = confusionMatrix(data = test$SeriousDlqin2yrs,
+                reference = testPred,
+                positive = "1")
+kable(as.data.frame(confusion$table), caption = "混淆矩阵表")
+```
+
+```{r}
+table = as.data.frame(confusion$overall)
+names(table) = c("指标值")
+table = t(table)
+rownames(table) = NULL
+kable(table, caption = "验证结果表", digit = 3)
+```
+
+可以看到：尽管准确率达到了 `r round(confusion$overall[1], 3)`, 但是还低于`r round(confusion$overall[5], 3)`的无信息率准确度（No Information Rate）。
+
+```{r}
+table = as.data.frame(confusion$byClass[1:5])
+names(table) = c("指标值")
+table = t(table)
+kable(table, caption = "灵敏度和特异度等指标表", digit = 3)
+```
+
+---
+
+从灵敏度和特异度来看：55.8% 的将会逾期的客户会被模型成功捕捉到；对于模型捕捉到的客户，只有 6.7% 的误判率。
+
+这验证了我们的猜测：**当持卡人逾期时，模型不一定能准确预测到；不过模型预测认为是逾期的客户绝大部分情况下的确会发生逾期**
+
+---
+
+> 如果模型的准确度稳定在一个水平,通常会在灵敏度和特异度之间做一个权衡。直觉上，增加灵敏度会使特异度下降，因为更多的样本被预测为“发生”。当不同类型的错误对应惩罚不同时,在灵敏度和特异度间做出潜在权衡或许是合理的。在过滤垃圾邮件时我们通常关注特异度,如果家人和同事的邮件能不被删除,大多数人愿意接受看一些垃圾邮件。
+
+> 陈蔚：这段话要进行改写，垃圾邮件要改为我们的数据案例，注意规避查重。
+
+---
+
+## 接受者操作特征（ROC）曲线
+
+为了在灵敏度和特异度二者间权衡，我们使用接受者操作特征（ROC）曲线。
+
+---
+
+ROC曲线 (Altman 和 Bland 1994; Brown 和 Davis 2006; Fawcett 2006) @Altman1994Diagnostic @Brown2006Receiver @Fawcett2006An were designed as a general method that, given a collection of continuous data points, determine an effective threshold such that values above the threshold are indicative of a specific event. ROC curve can be used for determining alternate cutoffs for class probabilities.（陈蔚：待翻译） ^[ROC曲线是一个较为常用的方法，它给出了一系列连续数据点，便于确定一个有效的阈值，将超过某个阈值的值表示一个特定的事件。]
+
+---
+
+```{r fig.align="center", fig.cap="Logit 模型的 ROC 曲线", out.width="80%"}
+rocCurve = roc(response = test$SeriousDlqin2yrs,
+               predictor = probability,
+               levels = rev(levels(test$SeriousDlqin2yrs)),
+               plot = TRUE,
+               print.thres=TRUE, print.auc=TRUE)
+```
+
+前文计算灵敏度和特异度时，我们默认 50% 概率阈值。为了捕获更多真阳性样本的方式提高灵敏度，我们可以通过降低阈值的方法。将阈值降低至 6.3% , 此时，灵敏度从 55.8% 提高到了 71.9% ，特异度从 93.3% 降低到了 74.1%。
+
+也就是说，降低阈值有利于我们识别出更多逾期的持卡人，但同时也会使误判的几率上升。
+
+在实际操作中，我们可以通过**确定不同的阈值来达到不同的效果**，例如：
+
+1. 在进行交易风控、信用卡降额的自动化系统构建时，通过确定较高的阈值以提高特异度，避免错判。
+2. 在进行逾期自动化预测以便于进一步调查时，通过降低阈值的方式提高灵敏度，以检测出更多潜在逾期持卡人。
+3. 通过平衡错判的成本与查漏的损失，确定适中的阈值以谋求商业利益最大化。
 
 # 模型选择
 
-## 抽样
-
-由于数据集样本量过大，难以完成较为复杂的模型求解。 ^[由于条件所限，本研究小组只有单台计算机的算力。在有分布式计算的环境下，可能不需要此步操作。]
-
+## 抽样、训练与评价指标
 
 ```{r}
 set.seed(1)
@@ -109,42 +289,41 @@ fitControl <- trainControl(## 10-fold CV
                            repeats = 5)
 ```
 
+由于数据集样本量过大，难以完成较为复杂的模型求解。 ^[由于条件所限，本研究小组只有单台计算机的算力。在有分布式计算的环境下，可能不需要此步操作。]我们从总样本中随机抽取 1% 的数据用于各种模型的训练和验证。
 
-Kappa 统计量（Cohen 1960）最初是一个用来评估两个估价者评估结果的一致性，同时也考虑到了由偶然情况引起的准确性误差。
-
-$$\mathrm{Kappa}=\frac{O-E}{1-E}$$
-
-> 在上式中，O是观测的准确性，E是基于混淆矩阵边缘计数得到的期望准确性。该统计量取值在-1和1之间;0值表示观测类与预测类之间没有一致性，1值表示模型的预测与观测类完全一致。负值表示预测与事实相反，但在建立预测模型过程中绝对值大的负值很少出现。当各类分布相同时，总精确度与 Kappa是成比例的。取决于具体情况，Kappa值在0.30到0.50之间代表合理的一致性。（Agresti 2002）
-
-> 这段话要进行语序修改，规避查重。
+我们使用10折交叉验证，重复5次的方法进行重抽样。
 
 我们使用 Kappa 和准确率作为模型的评价指标。
 
-## Logit
+Kappa 统计量（Cohen 1960） @Cohen1960A 最初是一个用来评估两个估价者评估结果的一致性，同时也考虑到了由偶然情况引起的准确性误差。
+
+$$\mathrm{Kappa}=\frac{O-E}{1-E}$$
+
+---
+
+> 在上式中，O是观测的准确性，E是基于混淆矩阵边缘计数得到的期望准确性。该统计量取值在-1和1之间;0值表示观测类与预测类之间没有一致性，1值表示模型的预测与观测类完全一致。负值表示预测与事实相反，但在建立预测模型过程中绝对值大的负值很少出现。当各类分布相同时，总精确度与 Kappa是成比例的。取决于具体情况，Kappa值在0.30到0.50之间代表合理的一致性。（Agresti 2002）
+
+> 陈蔚：这段话要进行语序修改，规避查重。
+
+---
+
+## Logit 回归
 
 ```{r}
 set.seed(1)
 logit <- train(SeriousDlqin2yrs ~ ., data = training, 
                  method = "glm", 
                  trControl = fitControl)
-logit
-logit$results
-
-trellis.par.set(caretTheme())
-plot(logit)
-
-trellis.par.set(caretTheme())
-plot(logit, metric = "Kappa")
-
-trellis.par.set(caretTheme())
-densityplot(logit, pch = "|")
+table = logit$results
+rownames(table) = NULL
+kable(table, caption = "在重抽样下 Logit 模型的表现", digits = 3)
 ```
 
-Logit 是一个受到非常广泛应用的模型，它十分简单、计算速度非常快，而且具有很强的可解释性。虽然 Logit 模型已经由很好的预测分类能力，但如果我们仅仅关注这一预测准确性这一指标，可能还有其它模型有更佳的表现。
+Logit 是一个受到非常广泛应用的模型，它十分简单、计算速度非常快，而且具有很强的可解释性。虽然 Logit 模型已经有很好的预测分类能力，但如果我们仅仅关注这一预测准确性这一指标，可能还有其它模型有更佳的表现。
 
 ## 线性判别分析（LDA）
 
-Fisher（1936）和 Welch（1939）分析了获得最优判别准则的方式。
+Fisher（1936）@fisher36lda 和 Welch（1939）@WELCH1939 分析了获得最优判别准则的方式。
 
 由贝叶斯法则：
 
@@ -176,28 +355,26 @@ $$
 
 ```{r}
 set.seed(1)
-logit <- train(SeriousDlqin2yrs ~ ., data = training, 
+lda <- train(SeriousDlqin2yrs ~ ., data = training, 
                  method = "lda", 
                  trControl = fitControl,
-               preProc = c("center", "scale"),)
-logit
-logit$results
-
-trellis.par.set(caretTheme())
-plot(logit)
-
-trellis.par.set(caretTheme())
-plot(logit, metric = "Kappa")
-
-trellis.par.set(caretTheme())
-densityplot(logit, pch = "|")
+               preProc = c("center", "scale"))
+table = lda$results
+rownames(table) = NULL
+kable(table, caption = "在重抽样下 LDA 模型的表现", digits = 3)
 ```
+
+```{r fig.align="center", fig.cap="在重抽样下 LDA 模型的准确率分布", out.width="50%"}
+trellis.par.set(caretTheme())
+densityplot(lda, pch = "|")
+```
+
 
 ## 偏最小二乘判别分析（PLSDA）
 
 由于 LDA 不太适合多重共线性的变量，我们可以试着使用主成分分析压缩变量空间的维度，但 PCA 可能无法识别能将样本分类的较好变量组合，且由于没有涉及被解释变量的分类信息（无监督），很难通过 PCA 找到一个最优化的分类预测。
 
-所以，我们使用偏最小二乘判别分析来进行分类。Berntsson 和 Wold（1986）将偏最小二乘应用在了问题中，起名为偏最小二乘判别分析（PLSDA）。尽管 Lie 和 Rayens（2007）指出，在降维非必须且建模目的时分类的时候，LDA 一定优于 PLS，但我们希望在降维之后，PLS 的表现能超过 LDA。
+所以，我们使用偏最小二乘判别分析来进行分类。Berntsson 和 Wold（1986） @Peder1986Comparison 将偏最小二乘应用在了问题中，起名为偏最小二乘判别分析（PLSDA）。尽管 Liu 和 Rayens（2007） @Liu2007PLS 指出，在降维非必须且建模目的时分类的时候，LDA 一定优于 PLS，但我们希望在降维之后，PLS 的表现能超过 LDA。
 
 我们只使用前十个 PLS 成分
 
@@ -207,26 +384,20 @@ plsda <- train(SeriousDlqin2yrs ~ ., data = training,
                  method = "pls", 
                  trControl = fitControl,
                tuneGrid = expand.grid(.ncomp = 1:10))
-plsda
-plsda$results
-
-trellis.par.set(caretTheme())
-plot(plsda)
-
-trellis.par.set(caretTheme())
-plot(plsda, metric = "Kappa")
-
-trellis.par.set(caretTheme())
-densityplot(plsda, pch = "|")
+table = lda$results
+rownames(table) = NULL
+kable(table, caption = "在重抽样下 PLSDA 模型的表现", digits = 3)
 ```
 
-缺点：
+```{r fig.align="center", fig.cap="Kappa 指标随主成分个数的变化", out.width="49%", fig.show='hold'}
+trellis.par.set(caretTheme())
+plot(plsda, metric = "Kappa")
+plot(plsda)
+```
 
-1. 
+我们可以看到 Kappa 指标随主成分个数的增多而先上升，后基本保持不变。可见，在此模型中，选取前 5 个主成分效率最高。
 
-变量重要程度：
-
-```{r}
+```{r fig.align="center", fig.cap="变量重要程度", out.width="80%"}
 plsImp = varImp(plsda, scale = FALSE)
 table = data.frame(variables = rownames(plsImp$importance), importence = plsImp$importance$Overall)
 ggplot(table, aes(x = reorder(variables, importence), y = importence)) +
@@ -236,7 +407,11 @@ ggplot(table, aes(x = reorder(variables, importence), y = importence)) +
   labs(x = "variables")
 ```
 
-> 待分析
+---
+
+> 陈蔚：变量重要程度待分析
+
+---
 
 ## SVM
 
@@ -248,24 +423,21 @@ svm <- train(SeriousDlqin2yrs ~ ., data = training,
                  method = "svmRadial", 
                  trControl = fitControl,
             tuneLength = 5)
-svm
-svm$results
+kable(svm$results, caption = "在重抽样下 SVM 模型的表现", digits = 3)
+```
 
+```{r fig.align="center", fig.cap="调优参数不同取值下的准确率和 Kappa 指标变化", out.width="49%", fig.show='hold'}
 trellis.par.set(caretTheme())
 plot(svm)
-
-trellis.par.set(caretTheme())
 plot(svm, metric = "Kappa")
-
-trellis.par.set(caretTheme())
-densityplot(svm, pch = "|")
 ```
+
 
 ## 随机梯度助推法（GBM）
 
 第三类被广泛应用的模型是分类树与基于规则的模型，在此，我们使用助推法这种树结构与规则的融合方法。
 
-Friedman等（2000）发现分类问题可以当作是正向分布可加模型，通过最小化指数损失函数实现分类。
+Friedman等（2000） @Ben2000Tissue 发现分类问题可以当作是正向分布可加模型，通过最小化指数损失函数实现分类。
 
 首先我们设定样本预测初始值为对数发生：
 
@@ -288,150 +460,65 @@ set.seed(1)
 gbm <- train(SeriousDlqin2yrs ~ ., data = training, 
                  method = "gbm", 
                  trControl = fitControl)
-svm
-svm$results
+kable(gbm$results, caption = "在重抽样下 GBM 模型的表现", digits = 3)
+```
+
+```{r fig.align="center", fig.cap="调优参数和迭代次数不同取值下的准确率和 Kappa 指标变化", out.width="49%", fig.show='hold'}
+trellis.par.set(caretTheme())
+plot(gbm)
 
 trellis.par.set(caretTheme())
-plot(svm)
+plot(gbm, metric = "Kappa")
+```
 
+```{r fig.align="center", fig.cap="在重抽样下 GBM 模型的准确率分布", out.width="50%"}
 trellis.par.set(caretTheme())
-plot(svm, metric = "Kappa")
-
-trellis.par.set(caretTheme())
-densityplot(svm, pch = "|")
+densityplot(gbm, pch = "|")
 ```
 
 ## 模型间的比较
 
-我们对 ... 和 ... 模型进行比较，两个模型都使用相同的重抽样方法估计各自的模型表现。 ^[由于设置的随机数种子相同，故不同模型使用的重抽样样本完全一致。]
+我们对训练的4个不同的模型进行比较，所有模型都使用相同的重抽样方法估计各自的模型表现。且由于设置的随机数种子相同，故不同模型使用的重抽样样本完全一致。 ^[重抽样 50 次：10 折交叉验证重复 5 次]
 
 ```{r}
-resamp = resamples(list(GBM = gbm, SVM = svm, Logit = logit))
-summary(resamp)
-summary(diff(resamp))
+resamp = resamples(list(LDA = lda, PLSDA = plsda, SVM = svm, GBM = gbm, Logit = logit))
+s1 = summary(resamp)
+s2 = summary(diff(resamp))
+```
+
+```{r fig.align="center", fig.cap="模型间 Kappa 的比较（0.95 置信区间）", out.width="80%", fig.height=3, fig.width=6}
 ggplot(resamp,
-       models = c("GBM", "SVM", "Logit"),
+       models = c("LDA", "PLSDA", "GBM", "Logit"),
+       metric = "Kappa",
+       conf.level = 0.95) +
+  theme_bw()
+```
+
+在**Kappa**这一效果衡量指标下，GBM 有着最好的效果，Logit 模型次之，PLSDA 模型表现最差。
+
+```{r fig.align="center", fig.cap="模型间准确率的比较（0.95 置信区间）", out.width="80%", fig.height=3, fig.width=6}
+ggplot(resamp,
+       models = c("LDA", "PLSDA", "SVM", "GBM", "Logit"),
        metric = "Accuracy",
        conf.level = 0.95) +
   theme_bw()
 ```
 
-分析图，在 95% 的置信区间下，.....
+在**准确率**这一效果衡量指标下，从偏差的角度来看，GBM 有着最好的效果，Logit 模型次之；从方差的角度来看，PLSDA 和 SVM 模型具有明显较小的方差；LDA 模型则表现不佳。
 
-分析p值
+综合来看，**GBM**模型具有最好的效果，**Logit**模型次之。然而，在模型的应用方面，我们更加倾向于使用计算速度较快、可解释性强的 Logit 模型。
 
-.....结果表明，X个模型表现十分接近。
+# 总结
 
-# 全部样本 logit regression
+---
 
-因为 logit 模型相对简单，求解速度快，且具有较强的可解释性，故我们使用 logit 模型对全部完整的样本进行拟合。
+> 待完善
 
-```{r}
-set.seed(1)
-inTraining <- createDataPartition(dat_complete$SeriousDlqin2yrs, p = .75, list = FALSE)
-train <- dat_complete[inTraining,]
-test <- dat_complete[-inTraining,]
-```
+---
 
-```{r}
-logit2 = glm(SeriousDlqin2yrs ~ ., data = train, family = binomial(link = "logit"))
-summary(logit2)
-```
+# 参考文献
 
-分析逻辑回归的方向、变量显著性。
-
-## 预测
-
-```{r}
-probability = predict(logit2, test, type = "response")
-summary(probability)
-
-distribution = as.data.frame(probability)
-distribution = cbind(distribution, group = test$SeriousDlqin2yrs)
-ggplot(distribution, aes(x = probability, fill = group)) +
-  geom_density(alpha = 0.3) + 
-  theme_minimal() +
-  scale_fill_manual(values = c("#037418", "darkred"))
-
-testPred = probability
-length(testPred[testPred > 0.5]) / length(testPred)
-testPred[testPred > 0.5] = 1
-testPred[testPred <= 0.5] = 0
-testPred = as.factor(testPred)
-```
-
-可以看出，对于真实情况为信用好的持卡人，我们预测出的逾期概率值的分布是有偏的，大多数预测概率的非常低。然而，比较之下，对于真实情况为逾期的持卡人，我们预测出的逾期概率值的分布则显得较为均匀。
-
-为此，我们猜想：**我们的模型将信用好的持卡人错认为逾期的概率较低，但是较难识别出逾期的客户。**
-
-为了验证我们的猜想，我们使用.....（以下）
-
-## 混淆矩阵与验证结果
-
-灵敏度（Sensitivity）
-
-$$\text{灵敏度} = \frac{\text{正确判定为“逾期”的样本数量}}{观测到的“逾期”的样本数量}$$
-
-特异度（Specificity）
-
-$$\text{灵敏度} = \frac{\text{正确判定为“正常”的样本数量}}{观测到的“正常”的样本数量}$$
-
-假阳性率为 1 - 特异度
-
-```{r}
-confusion = confusionMatrix(data = test$SeriousDlqin2yrs,
-                reference = testPred,
-                positive = "1")
-confusion
-```
-
-可以看到：尽管准确率达到了 `r round(confusion$overall[1], 3)`, 但是还低于`r round(confusion$overall[5], 3)`的无信息率准确度（No Information Rate）。
-
-从灵敏度和特异度来看：.....
-
-> 待补充
-
-验证了我们的猜测：**当持卡人逾期时，模型不一定能准确预测到。**
-
-> 如果模型的准确度稳定在一个水平,通常会在灵敏度和特异度之间做一个权衡。直觉上,增加灵敏度会使特异度下降,因为更多的样本被预测为“发生”。当不同类型的错误对应惩罚不同时,在灵敏度和特异度间做出潜在权衡或许是合理的。在过滤垃圾邮件时我们通常关注特异度,如果家人和同事的邮件能不被删除,大多数人愿意接受看一些垃圾邮件。
-
-> 这段话要进行改写，垃圾邮件要改为我们的数据案例，注意规避查重。
-
-为了评估二者间权衡，我们使用接受者操作特征（ROC）曲线。
-
-## 接受者操作特征（ROC）曲线
-
-ROC曲线 (Altman和 Bland1994; Brown和 Davis2006; Fawcett2006).... ^[ROC曲线是一个较为常用的方法，它给出了一系列连续数据点，便于确定一个有效的阈值，将超过某个阈值的值表示一个特定的事件。]
-
-
-```{r}
-rocCurve = roc(response = test$SeriousDlqin2yrs,
-               predictor = probability,
-               levels = rev(levels(test$SeriousDlqin2yrs)),
-               plot = TRUE,
-               print.thres=TRUE, print.auc=TRUE)
-auc(rocCurve)
-```
-
-前文计算灵敏度和特异度时，我们默认50%概率阈值。为了捕获更多真阳性样本的方式提高灵敏度，我们可以通过降低阈值的方法。将阈值降低至 XX, 此时，灵敏度从 XX 提高到了 XX，特异度.....。也就是说，降低阈值有利于我们识别出更多逾期的持卡人，但同时也会使误判的几率上升。
-
-
-## 提升图
-
-```{r}
-test = cbind(test, probability)
-liftCurve = lift(SeriousDlqin2yrs ~ probability, data = test[1:1000,])
-plot(liftCurve)
-```
-
-
-在实际操作中，我们可以通过确定不同的阈值来达到不同的效果，例如：
-
-1. 在进行交易风控、信用卡降额的自动化系统构建时，通过确定较高的阈值以提高特异度，避免错判。
-2. 在进行逾期自动化预测以便于进一步调查时，通过降低阈值的方式提高灵敏度，以检测出更多潜在逾期持卡人。
-3. 通过平衡错判的成本与查漏的损失，确定适中的阈值以谋求商业利益最大化。
-
-
+<div id="refs"></div>
 
 # 附录
 
@@ -440,3 +527,32 @@ plot(liftCurve)
 ```{r}
 str(dat)
 ```
+
+## 模型间的比较
+
+### 模型间准确率和 Kappa 的比较
+
+```{r}
+kable(s1$statistics$Accuracy, caption = "模型间准确率的比较")
+```
+
+```{r}
+kable(s2$table$Accuracy, caption = "模型间准确率差异矩阵")
+```
+
+```{r}
+kable(s1$statistics$Kappa, caption = "模型间 Kappa 的比较")
+```
+
+```{r}
+kable(s2$table$Accuracy, caption = "模型间Kappa差异矩阵")
+```
+
+## Logit 回归结果
+
+```{r}
+logit2_sum
+```
+
+
+
